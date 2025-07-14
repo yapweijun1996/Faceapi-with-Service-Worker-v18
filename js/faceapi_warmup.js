@@ -243,33 +243,6 @@ function addCapturePreview(dataUrl) {
 	});
 }
 
-function addVerifyCapturePreview(dataUrl, userId) {
-	if (!dataUrl) return;
-	const preview = document.getElementById('verifyCapturePreview');
-	if (!preview) return;
-
-	const img = document.createElement('img');
-	img.src = dataUrl;
-	img.className = 'capture-thumb';
-	img.dataset.userId = userId;
-	preview.appendChild(img);
-
-	const taId = `verifyCapturePreview_${userId}`;
-	let ta = document.getElementById(taId);
-	if (!ta) {
-		ta = document.createElement('textarea');
-		ta.id = taId;
-		ta.style.display = 'none';
-		preview.appendChild(ta);
-	}
-	ta.value = dataUrl;
-
-	requestAnimationFrame(() => {
-		img.classList.add('show');
-		preview.scrollLeft = preview.scrollWidth;
-	});
-}
-
 function retakeLastCapture() {
 	if (currentUserDescriptors.length === 0) return;
 	currentUserDescriptors.pop();
@@ -414,7 +387,7 @@ function captureAndSaveVerifiedUserImage() {
 	ctx.textBaseline = 'bottom';
 	ctx.fillText(timestamp, 5, canvas.height - 5);
 
-	return canvas.toDataURL('image/jpeg');
+	return canvas.toDataURL('image/jpeg', 0.5);
 }
 
 function isConsistentWithCurrentUser(descriptor) {
@@ -1093,9 +1066,6 @@ function faceapi_verify(descriptor){
 				verifiedCount++;
 
 				const capturedImage = captureAndSaveVerifiedUserImage();
-				if (capturedImage) {
-					addVerifyCapturePreview(capturedImage, uid);
-				}
 
 				const li = document.querySelector(`#verifyPersonList li[data-user-id="${uid}"]`);
 				if (li) {
