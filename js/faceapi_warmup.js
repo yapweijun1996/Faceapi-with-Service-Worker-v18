@@ -395,7 +395,8 @@ function captureAndSaveVerifiedUserImage(metadata) {
 		yPos -= lineHeight;
 	}
 	if (metadata.timeZone) {
-		ctx.fillText(`TimeZone: ${metadata.timeZone}`, 5, yPos);
+		const tzText = `TimeZone: ${metadata.timeZone} (UTC${metadata.timeZoneOffset})`;
+		ctx.fillText(tzText, 5, yPos);
 		yPos -= lineHeight;
 	}
 	if (metadata.utcTime) {
