@@ -435,9 +435,14 @@ async function getGpsCoordinates() {
 
 async function getDeviceMetadata() {
 	const gps = await getGpsCoordinates();
-	const utcTime = new Date().toUTCString();
+	const now = new Date();
+	const utcTime = now.toUTCString();
 	const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-	return { gps, utcTime, timeZone };
+	const offsetMinutes = now.getTimezoneOffset();
+	const offsetHours = -offsetMinutes / 60;
+	const timeZoneOffset = (offsetHours >= 0 ? '+' : '') + offsetHours;
+
+	return { gps, utcTime, timeZone, timeZoneOffset };
 }
 
 function isConsistentWithCurrentUser(descriptor) {
