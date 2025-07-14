@@ -399,6 +399,10 @@ function captureAndSaveVerifiedUserImage(metadata) {
 		ctx.fillText(tzText, 5, yPos);
 		yPos -= lineHeight;
 	}
+	if (metadata.device) {
+		ctx.fillText(`Device: ${metadata.device}`, 5, yPos);
+		yPos -= lineHeight;
+	}
 	if (metadata.utcTime) {
 		ctx.fillText(`UTC: ${metadata.utcTime}`, 5, yPos);
 		yPos -= lineHeight;
@@ -442,8 +446,9 @@ async function getDeviceMetadata() {
 	const offsetMinutes = now.getTimezoneOffset();
 	const offsetHours = -offsetMinutes / 60;
 	const timeZoneOffset = (offsetHours >= 0 ? '+' : '') + offsetHours;
+	const device = navigator.userAgent;
 
-	return { gps, utcTime, timeZone, timeZoneOffset };
+	return { gps, utcTime, timeZone, timeZoneOffset, device };
 }
 
 function isConsistentWithCurrentUser(descriptor) {
@@ -670,7 +675,17 @@ async function load_face_descriptor_json(warmupFaceDescriptorJson, merge = false
 			});
 		}
 		
-		verificationResults = registeredUsers.map(u => ({ id: u.id, name: u.name, verified: false }));
+		verificationResults = registeredUsers.map(u => ({
+			id: u.id,
+			name: u.name,
+			verified: false,
+			capturedImage: null,
+			utcTime: null,
+			timeZone: null,
+			timeZoneOffset: null,
+			gps: null,
+			device: null
+		}));
 		updateVerificationResultTextarea();
 		
 		totalVerifyFaces = registeredUsers.length;
