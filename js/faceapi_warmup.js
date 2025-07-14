@@ -399,8 +399,12 @@ function captureAndSaveVerifiedUserImage(metadata) {
 		ctx.fillText(tzText, 5, yPos);
 		yPos -= lineHeight;
 	}
-	if (metadata.device) {
-		ctx.fillText(`Device: ${metadata.device}`, 5, yPos);
+	if (metadata.deviceName) {
+		ctx.fillText(`Device: ${metadata.deviceName}`, 5, yPos);
+		yPos -= lineHeight;
+	}
+	if (metadata.deviceModel) {
+		ctx.fillText(`Model: ${metadata.deviceModel}`, 5, yPos);
 		yPos -= lineHeight;
 	}
 	if (metadata.utcTime) {
@@ -446,9 +450,15 @@ async function getDeviceMetadata() {
 	const offsetMinutes = now.getTimezoneOffset();
 	const offsetHours = -offsetMinutes / 60;
 	const timeZoneOffset = (offsetHours >= 0 ? '+' : '') + offsetHours;
-	const device = navigator.userAgent;
+	const userAgent = navigator.userAgent;
 
-	return { gps, utcTime, timeZone, timeZoneOffset, device };
+	const parser = new UAParser();
+	const result = parser.getResult();
+
+	const deviceName = result.device.vendor ? `${result.device.vendor} ${result.device.type || ''}`.trim() : 'Unknown';
+	const deviceModel = result.os.name ? `${result.os.name} ${result.os.version || ''}`.trim() : 'Unknown';
+
+	return { gps, utcTime, timeZone, timeZoneOffset, deviceName, deviceModel, deviceUserAgent: userAgent };
 }
 
 function isConsistentWithCurrentUser(descriptor) {
@@ -684,7 +694,10 @@ async function load_face_descriptor_json(warmupFaceDescriptorJson, merge = false
 			timeZone: null,
 			timeZoneOffset: null,
 			gps: null,
-			device: null
+			device: null,
+			deviceName: null,
+			deviceModel: null,
+			deviceUserAgent: null
 		}));
 		updateVerificationResultTextarea();
 		
