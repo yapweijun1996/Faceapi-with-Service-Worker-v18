@@ -369,7 +369,7 @@ function updateVerificationResultTextarea() {
 	}
 }
 
-function captureAndSaveVerifiedUserImage() {
+function captureAndSaveVerifiedUserImage(metadata) {
 	if (!lastFaceImageData) return null;
 
 	const canvas = document.createElement('canvas');
@@ -378,16 +378,66 @@ function captureAndSaveVerifiedUserImage() {
 	canvas.height = lastFaceImageData.height;
 	ctx.putImageData(lastFaceImageData, 0, 0);
 
-	// Add timestamp
+	// Add timestamp and metadata
 	const now = new Date();
 	const timestamp = now.toLocaleString();
 	ctx.fillStyle = 'white';
-	ctx.font = '14px Arial';
+	ctx.font = '12px Arial';
 	ctx.textAlign = 'left';
 	ctx.textBaseline = 'bottom';
-	ctx.fillText(timestamp, 5, canvas.height - 5);
+
+	let yPos = canvas.height - 5;
+	const lineHeight = 14;
+
+	if (metadata.gps) {
+		const gpsText = `GPS: ${metadata.gps.latitude.toFixed(4)}, ${metadata.gps.longitude.toFixed(4)}`;
+		ctx.fillText(gpsText, 5, yPos);
+		yPos -= lineHeight;
+	}
+	if (metadata.timeZone) {
+		ctx.fillText(`TimeZone: ${metadata.timeZone}`, 5, yPos);
+		yPos -= lineHeight;
+	}
+	if (metadata.utcTime) {
+		ctx.fillText(`UTC: ${metadata.utcTime}`, 5, yPos);
+		yPos -= lineHeight;
+	}
+	ctx.fillText(`Local: ${timestamp}`, 5, yPos);
+
 
 	return canvas.toDataURL('image/jpeg', 0.5);
+}
+
+async function getGpsCoordinates() {
+	return new Promise((resolve) => {
+		const askForPermission = () => {
+			navigator.geolocation.getCurrentPosition(
+				(position) => {
+					resolve({
+						latitude: position.coords.latitude,
+						longitude: position.coords.longitude,
+					});
+				},
+				(error) => {
+					if (error.code === error.PERMISSION_DENIED) {
+						alert("GPS permission is required for verification. Please allow access to continue.");
+						setTimeout(askForPermission, 1000); // Ask again after a short delay
+					} else {
+						console.error("Error getting GPS location:", error);
+						resolve(null); // Resolve with null if there's another error
+					}
+				}
+			);
+		};
+		askForPermission();
+	});
+}
+
+async function getDeviceMetadata() {
+	const gps = await getGpsCoordinates();
+	const utcTime = new Date().toUTCString();
+	const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	return { gps, utcTime, timeZone };
 }
 
 function isConsistentWithCurrentUser(descriptor) {
@@ -1041,7 +1091,7 @@ var vle_distance_rate = 0.3;
 * more false negatives). 0.3 is a commonly used starting point that works
 * well in good lighting conditions. Adjust empirically for your setup.
 */
-function faceapi_verify(descriptor){
+async function faceapi_verify(descriptor){
 	if (descriptor && !verificationCompleted) {
 		let matchFound = false;
 		let distance;
@@ -1065,7 +1115,8 @@ function faceapi_verify(descriptor){
 				verifiedUserIds.add(uid);
 				verifiedCount++;
 
-				const capturedImage = captureAndSaveVerifiedUserImage();
+				const metadata = await getDeviceMetadata();
+				const capturedImage = captureAndSaveVerifiedUserImage(metadata);
 
 				const li = document.querySelector(`#verifyPersonList li[data-user-id="${uid}"]`);
 				if (li) {
@@ -1073,7 +1124,12 @@ function faceapi_verify(descriptor){
 					if (status) status.textContent = 'verified';
 					li.classList.add('verified');
 				}
-				verificationResults = verificationResults.map(r => r.id === uid ? { ...r, verified: true, capturedImage: capturedImage } : r);
+				verificationResults = verificationResults.map(r => {
+					if (r.id === uid) {
+						return { ...r, verified: true, capturedImage, ...metadata };
+					}
+					return r;
+				});
 				updateVerificationResultTextarea();
 				updateVerifyProgress();
 				showVerifyToast(`${userMeta.name} (${userMeta.id}) detected`);
