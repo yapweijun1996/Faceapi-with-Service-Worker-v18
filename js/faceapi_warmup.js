@@ -243,6 +243,33 @@ function addCapturePreview(dataUrl) {
 	});
 }
 
+function addVerifyCapturePreview(dataUrl, userId) {
+	if (!dataUrl) return;
+	const preview = document.getElementById('verifyCapturePreview');
+	if (!preview) return;
+
+	const img = document.createElement('img');
+	img.src = dataUrl;
+	img.className = 'capture-thumb';
+	img.dataset.userId = userId;
+	preview.appendChild(img);
+
+	const taId = `verifyCapturePreview_${userId}`;
+	let ta = document.getElementById(taId);
+	if (!ta) {
+		ta = document.createElement('textarea');
+		ta.id = taId;
+		ta.style.display = 'none';
+		preview.appendChild(ta);
+	}
+	ta.value = dataUrl;
+
+	requestAnimationFrame(() => {
+		img.classList.add('show');
+		preview.scrollLeft = preview.scrollWidth;
+	});
+}
+
 function retakeLastCapture() {
 	if (currentUserDescriptors.length === 0) return;
 	currentUserDescriptors.pop();
@@ -367,6 +394,27 @@ function updateVerificationResultTextarea() {
 		ta.value = JSON.stringify(verificationResults, null, 2);
 		ta.dispatchEvent(new Event('input', { bubbles: true }));
 	}
+}
+
+function captureAndSaveVerifiedUserImage() {
+	if (!lastFaceImageData) return null;
+
+	const canvas = document.createElement('canvas');
+	const ctx = canvas.getContext('2d');
+	canvas.width = lastFaceImageData.width;
+	canvas.height = lastFaceImageData.height;
+	ctx.putImageData(lastFaceImageData, 0, 0);
+
+	// Add timestamp
+	const now = new Date();
+	const timestamp = now.toLocaleString();
+	ctx.fillStyle = 'white';
+	ctx.font = '14px Arial';
+	ctx.textAlign = 'left';
+	ctx.textBaseline = 'bottom';
+	ctx.fillText(timestamp, 5, canvas.height - 5);
+
+	return canvas.toDataURL('image/jpeg');
 }
 
 function isConsistentWithCurrentUser(descriptor) {
@@ -1043,13 +1091,19 @@ function faceapi_verify(descriptor){
 			if (uid && !verifiedUserIds.has(uid)) {
 				verifiedUserIds.add(uid);
 				verifiedCount++;
+
+				const capturedImage = captureAndSaveVerifiedUserImage();
+				if (capturedImage) {
+					addVerifyCapturePreview(capturedImage, uid);
+				}
+
 				const li = document.querySelector(`#verifyPersonList li[data-user-id="${uid}"]`);
 				if (li) {
 					const status = li.querySelector('.status');
 					if (status) status.textContent = 'verified';
 					li.classList.add('verified');
 				}
-				verificationResults = verificationResults.map(r => r.id === uid ? { ...r, verified: true } : r);
+				verificationResults = verificationResults.map(r => r.id === uid ? { ...r, verified: true, capturedImage: capturedImage } : r);
 				updateVerificationResultTextarea();
 				updateVerifyProgress();
 				showVerifyToast(`${userMeta.name} (${userMeta.id}) detected`);
