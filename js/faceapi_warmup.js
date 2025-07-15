@@ -789,13 +789,23 @@ function video_face_detection() {
 			
 			// Mark a detection in-flight and send the frame to the worker
 			isDetectingFrame = true;
-			worker.postMessage({
-				type: 'DETECT_FACES',
-				imageData,
-				width: canvas.width,
-				height: canvas.height,
-				face_detector_options: face_detector_options_setup,
-			});
+			if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+				navigator.serviceWorker.controller.postMessage({
+					type: 'DETECT_FACES',
+					imageData,
+					width: canvas.width,
+					height: canvas.height,
+					face_detector_options: face_detector_options_setup,
+				});
+			} else if (worker && typeof worker.postMessage === 'function') {
+				worker.postMessage({
+					type: 'DETECT_FACES',
+					imageData,
+					width: canvas.width,
+					height: canvas.height,
+					face_detector_options: face_detector_options_setup,
+				});
+			}
 			
 			// Schedule the next frame – this will be skipped if detection is still running
 			// Next frame will be scheduled when the worker returns the detection result
@@ -1413,7 +1423,11 @@ async function load_model() {
 	}
 	
 	if (worker) {
-		worker.postMessage({ type: 'LOAD_MODELS' });
+		if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+			navigator.serviceWorker.controller.postMessage({ type: 'LOAD_MODELS' });
+		} else if (worker && typeof worker.postMessage === 'function') {
+			worker.postMessage({ type: 'LOAD_MODELS' });
+		}
 	} else {
 		console.error('Unable to post message, worker is undefined');
 	}
@@ -1471,12 +1485,21 @@ function faceapi_warmup() {
 			canvas_hidden.height = img.height;
 			context.drawImage(img, 0, 0, img.width, img.height);
 			var imageData = context.getImageData(0, 0, img.width, img.height);
-			worker.postMessage({
-				type: 'WARMUP_FACES',
-				imageData,
-				width: img.width,
-				height: img.height
-			});
+			if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+				navigator.serviceWorker.controller.postMessage({
+					type: 'WARMUP_FACES',
+					imageData,
+					width: img.width,
+					height: img.height
+				});
+			} else if (worker && typeof worker.postMessage === 'function') {
+				worker.postMessage({
+					type: 'WARMUP_FACES',
+					imageData,
+					width: img.width,
+					height: img.height
+				});
+			}
 			canvas_hidden.remove();
 		};
 	}
