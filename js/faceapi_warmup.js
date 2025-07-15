@@ -369,14 +369,14 @@ function updateVerificationResultTextarea() {
 	}
 }
 
-function captureAndSaveVerifiedUserImage(metadata) {
-	if (!lastFaceImageData) return null;
+function captureAndSaveVerifiedUserImage(imageData, metadata) {
+	if (!imageData) return null;
 
 	const canvas = document.createElement('canvas');
 	const ctx = canvas.getContext('2d');
-	canvas.width = lastFaceImageData.width;
-	canvas.height = lastFaceImageData.height;
-	ctx.putImageData(lastFaceImageData, 0, 0);
+	canvas.width = imageData.width;
+	canvas.height = imageData.height;
+	ctx.putImageData(imageData, 0, 0);
 
 	// Add timestamp and metadata
 	const now = new Date();
@@ -1125,7 +1125,7 @@ var vle_distance_rate = 0.3;
 * more false negatives). 0.3 is a commonly used starting point that works
 * well in good lighting conditions. Adjust empirically for your setup.
 */
-async function faceapi_verify(descriptor){
+async function faceapi_verify(descriptor, imageData){
 	if (descriptor && !verificationCompleted) {
 		let matchFound = false;
 		let distance;
@@ -1150,7 +1150,7 @@ async function faceapi_verify(descriptor){
 				verifiedCount++;
 
 				const metadata = await getDeviceMetadata();
-				const capturedImage = captureAndSaveVerifiedUserImage(metadata);
+				const capturedImage = captureAndSaveVerifiedUserImage(imageData, metadata);
 
 				const li = document.querySelector(`#verifyPersonList li[data-user-id="${uid}"]`);
 				if (li) {
@@ -1204,12 +1204,13 @@ async function initWorkerAddEventListener() {
 			
 			
 			const dets = event.data.data.detections[0];
-			lastFaceImageData = event.data.data.detections[1] && event.data.data.detections[1][0];
+			const imageDataForFrame = event.data.data.detections[1] && event.data.data.detections[1][0];
+			lastFaceImageData = imageDataForFrame; // Keep for registration preview
 			drawImageDataToCanvas(event.data.data.detections, canvasOutputId);
 			drawAllFaces(Array.isArray(dets) ? dets : []);
 			if (Array.isArray(dets) && dets.length > 0) {
 				if (faceapi_action === "verify") {
-					dets.forEach(d => faceapi_verify(d.descriptor));
+					dets.forEach(d => faceapi_verify(d.descriptor, imageDataForFrame));
 				} else if (faceapi_action === "register") {
 					// Handle registration timeout
 					if (registrationStartTime === null) {
@@ -1481,7 +1482,8 @@ async function video_face_detection_mainthread() {
 		
 		// ----- Registration/verification logic -----
 		if (faceapi_action === "verify") {
-			detections.forEach(d => faceapi_verify(d.descriptor));
+			const currentFrameImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+			detections.forEach(d => faceapi_verify(d.descriptor, currentFrameImageData));
 		} else if (faceapi_action === "register") {
 			// --- Registration timer logic (matches worker logic) ---
 			if (registrationStartTime === null) {
