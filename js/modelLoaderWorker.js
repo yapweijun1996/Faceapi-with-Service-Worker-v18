@@ -13,6 +13,8 @@
  *  4. Sends a 'MODELS_LOADED' message back to the main thread upon completion.
  */
 
+// Import the patch to polyfill the browser environment
+importScripts('faceEnvWorkerPatch.js');
 // Import the face-api.js library. The path is relative to this worker script.
 importScripts('face-api.min.js');
 
