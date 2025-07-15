@@ -1587,20 +1587,49 @@ async function faceapi_warmup_mainthread() {
 }
 
 async function startInMainThread() {
-	console.log("Main-thread fallback: loading face-api models directly");
+    console.log("Main-thread fallback: using Web Worker to load models.");
     showLoadingOverlay();
-	await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
-	await faceapi.nets.faceLandmark68Net.loadFromUri('./models');
-	await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
 
-    // Perform active warmup on the main thread
-    await faceapi_warmup_mainthread();
-    isFaceApiReady = true;
-    hideLoadingOverlay();
+    // Check for Web Worker support as a final fallback
+    if (window.Worker) {
+        const modelWorker = new Worker('./js/modelLoaderWorker.js');
 
-	// Directly call the necessary functions for the main-thread flow.
-	await camera_start();
-	await video_face_detection_mainthread();
+        modelWorker.onmessage = async (event) => {
+            if (event.data.type === 'MODELS_LOADED') {
+                console.log("Main thread: Models loaded by worker.");
+                isFaceApiReady = true;
+                
+                // Models are loaded, now perform the main-thread warmup
+                await faceapi_warmup_mainthread();
+                hideLoadingOverlay();
+
+                // Start camera and detection loop
+                await camera_start();
+                await video_face_detection_mainthread();
+
+                modelWorker.terminate(); // Clean up the worker
+            } else if (event.data.type === 'LOAD_ERROR') {
+                console.error("Model loading in worker failed:", event.data.error);
+                hideLoadingOverlay();
+                showMessage('error', 'Failed to load face models. Please refresh.');
+            }
+        };
+
+        modelWorker.postMessage({ type: 'LOAD_MODELS' });
+    } else {
+        // Absolute fallback if even Web Workers are not supported
+        console.error("Web Workers not supported. Loading models on main thread.");
+        await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('./models');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
+        
+        await faceapi_warmup_mainthread();
+        isFaceApiReady = true;
+        hideLoadingOverlay();
+        
+        await camera_start();
+        await video_face_detection_mainthread();
+    }
 }
 
 // Initialize either service worker or fallback on main thread
