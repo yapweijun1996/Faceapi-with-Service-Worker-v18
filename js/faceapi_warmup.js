@@ -1715,9 +1715,14 @@ document.addEventListener("DOMContentLoaded", async function(event) {
 	// Use Worker only if Service Worker and OffscreenCanvas are supported,
 	// and the browser is NOT Chrome on iOS (due to compatibility issues)
 	const canUseWorker = swSupported && offscreenSupported && !isChromeIOS;
+	// Force Web Worker/main-thread fallback for debugging
+	// (Set to false to always use startInMainThread)
+	// Remove or comment this line to restore normal behavior
+	const forceWebWorkerDebug = true;
+	const effectiveCanUseWorker = forceWebWorkerDebug ? false : canUseWorker;
 	
 	
-	if (canUseWorker) {
+	if (effectiveCanUseWorker) {
 		try {
 			await initWorker();
 		} catch (e) {
@@ -1725,7 +1730,7 @@ document.addEventListener("DOMContentLoaded", async function(event) {
 			await startInMainThread();
 		}
 	} else {
-		console.warn("Service Worker or OffscreenCanvas not available; using main thread");
+		console.warn("Service Worker or OffscreenCanvas not available or forced Web Worker debug mode; using main thread/Web Worker fallback");
 		await startInMainThread();
 	}
 	updateProgress();
