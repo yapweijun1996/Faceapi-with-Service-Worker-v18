@@ -1531,11 +1531,40 @@ async function video_face_detection_mainthread() {
 }
 
 // Main-thread fallback for environments without SW/OffscreenCanvas (e.g. iOS PWA)
+async function faceapi_warmup_mainthread() {
+    var img_face_for_loading = imgFaceFilePathForWarmup;
+    if (img_face_for_loading) {
+        var img = new Image();
+        img.src = img_face_for_loading;
+        await new Promise(resolve => {
+            img.onload = async () => {
+                console.log("Main-thread warmup: performing initial detection");
+                let canvas_hidden = document.createElement('canvas');
+                canvas_hidden.willReadFrequently = true;
+                let context = canvas_hidden.getContext("2d");
+                canvas_hidden.width = img.width;
+                canvas_hidden.height = img.height;
+                context.drawImage(img, 0, 0, img.width, img.height);
+
+                // Perform a detection to warm up the model
+                await faceapi.detectAllFaces(canvas_hidden, new faceapi.TinyFaceDetectorOptions(face_detector_options_setup));
+                
+                console.log("Main-thread warmup complete.");
+                resolve();
+            };
+        });
+    }
+}
+
 async function startInMainThread() {
 	console.log("Main-thread fallback: loading face-api models directly");
 	await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
 	await faceapi.nets.faceLandmark68Net.loadFromUri('./models');
 	await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
+
+    // Perform active warmup on the main thread
+    await faceapi_warmup_mainthread();
+
 	if (Array.isArray(warmup_completed)) {
 		warmup_completed.forEach(func => func());
 	}
