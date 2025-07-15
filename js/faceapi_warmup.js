@@ -40,6 +40,11 @@ var vle_facebox_yn = "y" ; // y / n
 
 var isWorkerReady = false;
 var isFaceApiReady = false;
+var faceApiReadyPromise;
+var resolveFaceApiReady;
+faceApiReadyPromise = new Promise(resolve => {
+    resolveFaceApiReady = resolve;
+});
 var worker = "";
 var serviceWorkerFileName = "faceDetectionServiceWorker.js";
 var serviceWorkerFilePath = "./js/faceDetectionServiceWorker.js";
@@ -661,6 +666,7 @@ async function handleJsonFileInput(event) {
 }
 
 async function load_face_descriptor_json(warmupFaceDescriptorJson, merge = false) {
+	await faceApiReadyPromise; // Wait for models to load
 	if (!isFaceApiReady) {
         console.warn('Face API not ready, deferring JSON load.');
         // Optionally, you could queue this to run after API is ready
@@ -1433,6 +1439,9 @@ async function initWorker() {
 			
 			isWorkerReady = true; // Set the worker as ready
 			isFaceApiReady = true;
+			if (typeof resolveFaceApiReady === 'function') {
+				resolveFaceApiReady();
+			}
 			hideLoadingOverlay();
 			console.log("Worker initialized successfully.");
 		} catch (error) {
@@ -1598,6 +1607,9 @@ async function startInMainThread() {
             if (event.data.type === 'MODELS_LOADED') {
                 console.log("Main thread: Models loaded by worker.");
                 isFaceApiReady = true;
+				if (typeof resolveFaceApiReady === 'function') {
+					resolveFaceApiReady();
+				}
                 
                 // Models are loaded, now perform the main-thread warmup
                 await faceapi_warmup_mainthread();
@@ -1625,6 +1637,9 @@ async function startInMainThread() {
         
         await faceapi_warmup_mainthread();
         isFaceApiReady = true;
+		if (typeof resolveFaceApiReady === 'function') {
+			resolveFaceApiReady();
+		}
         hideLoadingOverlay();
         
         await camera_start();
