@@ -1601,6 +1601,7 @@ async function faceapi_warmup_mainthread() {
         await new Promise(resolve => {
             img.onload = async () => {
                 console.log("Main-thread warmup: performing initial detection");
+                console.log("Warmup image loaded. img.width:", img.width, "img.height:", img.height);
                 let canvas_hidden = document.createElement('canvas');
                 canvas_hidden.willReadFrequently = true;
                 let context = canvas_hidden.getContext("2d");
@@ -1609,9 +1610,9 @@ async function faceapi_warmup_mainthread() {
                 context.drawImage(img, 0, 0, img.width, img.height);
 
                 try {
-                    // Perform a detection to warm up the model
-                    await faceapi.detectAllFaces(canvas_hidden, new faceapi.TinyFaceDetectorOptions(face_detector_options_setup));
-                    console.log("Main-thread warmup complete.");
+                    console.log("Calling faceapi.detectAllFaces on warmup canvas...");
+                    const detections = await faceapi.detectAllFaces(canvas_hidden, new faceapi.TinyFaceDetectorOptions(face_detector_options_setup));
+                    console.log("Main-thread warmup complete. Detection result:", detections);
                 } catch (err) {
                     console.error("Error during main-thread warmup detection:", err);
                 }
