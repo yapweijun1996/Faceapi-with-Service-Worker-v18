@@ -1458,7 +1458,8 @@ async function video_face_detection_mainthread() {
 		// Draw frame to canvas
 		canvas.width = video.videoWidth;
 		canvas.height = video.videoHeight;
-		ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        lastFaceImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 		
 		// Detect faces directly
 		let detections;
@@ -1475,7 +1476,8 @@ async function video_face_detection_mainthread() {
 			detections = result ? [result] : [];
 		}
 		
-		drawAllFaces(detections);
+        drawImageDataToCanvas([detections, [lastFaceImageData]], canvasOutputId);
+        drawAllFaces(detections);
 		
 		// ----- Registration/verification logic -----
 		if (faceapi_action === "verify") {
