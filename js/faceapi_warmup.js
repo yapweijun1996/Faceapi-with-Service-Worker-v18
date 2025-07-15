@@ -1497,6 +1497,8 @@ async function video_face_detection_mainthread() {
 			} else if (detections.length !== 1) {
 				showMessage('error', 'Multiple faces detected. Please ensure only your face is visible.');
 			} else {
+				// --- Set lastFaceImageData for thumbnail preview, just like worker mode ---
+				lastFaceImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 				const descriptor = detections[0].descriptor;
 				if (!isCaptureQualityHigh(detections[0])) {
 					showMessage('error', 'Low-quality capture. Ensure good lighting and face the camera.');
@@ -1505,9 +1507,6 @@ async function video_face_detection_mainthread() {
 				} else if (!isConsistentWithCurrentUser(descriptor)) {
 					showMessage('error', 'Face recognized, but the angle changed too much. Please turn your head slowly left or right.');
 				} else {
-					// --- Set lastFaceImageData for thumbnail preview, just like worker mode ---
-					lastFaceImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-					
 					showMessage('success', 'Face capture accepted.');
 					if (navigator.vibrate) navigator.vibrate(100);
 					faceapi_register(descriptor);
