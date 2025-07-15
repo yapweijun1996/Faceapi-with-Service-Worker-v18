@@ -39,6 +39,7 @@ var vle_facebox_yn = "y" ; // y / n
 
 
 var isWorkerReady = false;
+var isFaceApiReady = false;
 var worker = "";
 var serviceWorkerFileName = "faceDetectionServiceWorker.js";
 var serviceWorkerFilePath = "./js/faceDetectionServiceWorker.js";
@@ -189,6 +190,20 @@ function showVerifyToast(message) {
 	}, 3000);
 }
 
+function showLoadingOverlay() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+    }
+}
+
+function hideLoadingOverlay() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
 
 function updateProgress() {
 	const el = document.getElementById('progressText');
@@ -257,6 +272,10 @@ function retakeLastCapture() {
 }
 
 function restartRegistration() {
+	if (!isFaceApiReady) {
+        showMessage('error', 'Face API is not ready yet. Please wait.');
+        return;
+    }
 	stopRegistrationTimer();
 	currentUserDescriptors = [];
 	capturedFrames = [];
@@ -298,6 +317,10 @@ function cancelRegistration() {
 }
 
 function restartVerification() {
+	if (!isFaceApiReady) {
+        showMessage('error', 'Face API is not ready yet. Please wait.');
+        return;
+    }
 	verifiedCount = 0;
 	verifiedUserIds = new Set();
 	verificationCompleted = false;
@@ -638,6 +661,11 @@ async function handleJsonFileInput(event) {
 }
 
 async function load_face_descriptor_json(warmupFaceDescriptorJson, merge = false) {
+	if (!isFaceApiReady) {
+        console.warn('Face API not ready, deferring JSON load.');
+        // Optionally, you could queue this to run after API is ready
+        return;
+    }
 	try {
 		const data = JSON.parse(warmupFaceDescriptorJson);
 		if (Array.isArray(data) && data.length > 0 && data[0].hasOwnProperty('id')) {
@@ -1404,6 +1432,8 @@ async function initWorker() {
 			await load_model(); // Wait for the model to load
 			
 			isWorkerReady = true; // Set the worker as ready
+			isFaceApiReady = true;
+			hideLoadingOverlay();
 			console.log("Worker initialized successfully.");
 		} catch (error) {
 			console.error("Error initializing worker:", error);
@@ -1558,12 +1588,15 @@ async function faceapi_warmup_mainthread() {
 
 async function startInMainThread() {
 	console.log("Main-thread fallback: loading face-api models directly");
+    showLoadingOverlay();
 	await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
 	await faceapi.nets.faceLandmark68Net.loadFromUri('./models');
 	await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
 
     // Perform active warmup on the main thread
     await faceapi_warmup_mainthread();
+    isFaceApiReady = true;
+    hideLoadingOverlay();
 
 	if (Array.isArray(warmup_completed)) {
 		warmup_completed.forEach(func => func());
