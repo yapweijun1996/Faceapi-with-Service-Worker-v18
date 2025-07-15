@@ -1608,10 +1608,17 @@ async function faceapi_warmup_mainthread() {
                 canvas_hidden.height = img.height;
                 context.drawImage(img, 0, 0, img.width, img.height);
 
-                // Perform a detection to warm up the model
-                await faceapi.detectAllFaces(canvas_hidden, new faceapi.TinyFaceDetectorOptions(face_detector_options_setup));
-                
-                console.log("Main-thread warmup complete.");
+                try {
+                    // Perform a detection to warm up the model
+                    await faceapi.detectAllFaces(canvas_hidden, new faceapi.TinyFaceDetectorOptions(face_detector_options_setup));
+                    console.log("Main-thread warmup complete.");
+                } catch (err) {
+                    console.error("Error during main-thread warmup detection:", err);
+                }
+                resolve();
+            };
+            img.onerror = (e) => {
+                console.error("Main-thread warmup image failed to load:", img_face_for_loading, e);
                 resolve();
             };
         });
@@ -1636,6 +1643,7 @@ async function startInMainThread() {
                 
                 // Models are loaded, now perform the main-thread warmup
                 await faceapi_warmup_mainthread();
+                console.log("After main-thread warmup: starting camera and detection loop");
                 hideLoadingOverlay();
 
                 // Start camera and detection loop
@@ -1659,6 +1667,7 @@ async function startInMainThread() {
         await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
         
         await faceapi_warmup_mainthread();
+        console.log("After main-thread warmup: starting camera and detection loop");
         isFaceApiReady = true;
 		if (typeof resolveFaceApiReady === 'function') {
 			resolveFaceApiReady();
