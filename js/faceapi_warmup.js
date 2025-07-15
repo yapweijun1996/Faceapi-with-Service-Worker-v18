@@ -1632,9 +1632,9 @@ async function startInMainThread() {
 
     // Check for Web Worker support as a final fallback
     if (window.Worker) {
-        const modelWorker = new Worker('./js/modelLoaderWorker.js');
+        worker = new Worker('./js/faceDetectionWebWorker.js');
 
-        modelWorker.onmessage = async (event) => {
+        worker.onmessage = async (event) => {
             if (event.data.type === 'MODELS_LOADED') {
                 console.log("Main thread: Models loaded by worker.");
                 isFaceApiReady = true;
@@ -1659,7 +1659,7 @@ async function startInMainThread() {
             }
         };
 
-        modelWorker.postMessage({ type: 'LOAD_MODELS' });
+        worker.postMessage({ type: 'LOAD_MODELS' });
     } else {
         // Absolute fallback if even Web Workers are not supported
         console.error("Web Workers not supported. Loading models on main thread.");
