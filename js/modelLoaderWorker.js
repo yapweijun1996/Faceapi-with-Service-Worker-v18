@@ -19,24 +19,36 @@ importScripts('faceEnvWorkerPatch.js');
 importScripts('face-api.min.js');
 
 self.onmessage = async (event) => {
-  if (event.data.type === 'LOAD_MODELS') {
-    try {
-      console.log('Worker: Received request to load models.');
+  const { type, imageData, width, height, face_detector_options } = event.data;
+
+  switch (type) {
+    case 'LOAD_MODELS':
+      try {
+        console.log('Worker: Received request to load models.');
+        await faceapi.nets.tinyFaceDetector.loadFromUri('../models');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('../models');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('../models');
+        console.log('Worker: Models loaded successfully.');
+        self.postMessage({ type: 'MODELS_LOADED' });
+      } catch (error) {
+        console.error('Worker: Error loading models.', error);
+        self.postMessage({ type: 'LOAD_ERROR', error: error.message });
+      }
+      break;
+
+    case 'DETECT_FACES':
+      if (!imageData) {
+        return;
+      }
+      const detections = await faceapi
+        .detectAllFaces(new faceapi.Canvas(width, height), new faceapi.TinyFaceDetectorOptions(face_detector_options))
+        .withFaceLandmarks()
+        .withFaceDescriptors();
       
-      // Load all the required models from the /models directory.
-      await faceapi.nets.tinyFaceDetector.loadFromUri('../models');
-      await faceapi.nets.faceLandmark68Net.loadFromUri('../models');
-      await faceapi.nets.faceRecognitionNet.loadFromUri('../models');
-      
-      console.log('Worker: Models loaded successfully.');
-      
-      // Notify the main thread that loading is complete.
-      self.postMessage({ type: 'MODELS_LOADED' });
-      
-    } catch (error) {
-      console.error('Worker: Error loading models.', error);
-      // Optionally, send an error message back to the main thread
-      self.postMessage({ type: 'LOAD_ERROR', error: error.message });
-    }
+      self.postMessage({
+        type: 'DETECTION_RESULT',
+        data: { detections: [detections, [imageData]] }
+      });
+      break;
   }
 };

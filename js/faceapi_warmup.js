@@ -45,7 +45,8 @@ var resolveFaceApiReady;
 faceApiReadyPromise = new Promise(resolve => {
     resolveFaceApiReady = resolve;
 });
-var worker = "";
+var worker = null;
+var modelWorker = null;
 var serviceWorkerFileName = "faceDetectionServiceWorker.js";
 var serviceWorkerFilePath = "./js/faceDetectionServiceWorker.js";
 var imgFaceFilePathForWarmup = "./models/face_for_loading.png";
@@ -1221,183 +1222,117 @@ async function faceapi_verify(descriptor, imageData){
 }
 
 async function initWorkerAddEventListener() {
-	navigator.serviceWorker.addEventListener('message', (event) => {
-		console.log('event.data.type.');
-		console.log(event.data.type);
-		switch (event.data.type) {
-			case 'MODELS_LOADED':
-			console.log('Face detection models loaded.');
-			faceapi_warmup();
-			break;
-			case 'DETECTION_RESULT':
-			console.log("DETECTION_RESULT here");
-			//console.log(event);
-			//console.log(event.data.data.detections[0]);
-			//console.log("event.data.data.detections");
-			console.log(event.data.data.detections);
-			
-			
-			const dets = event.data.data.detections[0];
-			const imageDataForFrame = event.data.data.detections[1] && event.data.data.detections[1][0];
-			lastFaceImageData = imageDataForFrame; // Keep for registration preview
-			drawImageDataToCanvas(event.data.data.detections, canvasOutputId);
-			drawAllFaces(Array.isArray(dets) ? dets : []);
-			if (Array.isArray(dets) && dets.length > 0) {
-				if (faceapi_action === "verify") {
-					dets.forEach(d => faceapi_verify(d.descriptor, imageDataForFrame));
-				} else if (faceapi_action === "register") {
-					// Handle registration timeout
-					if (registrationStartTime === null) {
-						registrationStartTime = Date.now();
-						startRegistrationTimer();
-					}
-					if (Date.now() - registrationStartTime > registrationTimeout) {
-						stopRegistrationTimer();
-						showMessage('error', 'Registration timed out. Ensure you are well lit and try again.');
-						if (typeof showTimeoutOverlay === 'function') showTimeoutOverlay();
-						faceapi_action = null;
-						camera_stop();
-						registrationCompleted = true;
-						stopRegistrationTimer();
-					} else if (dets.length !== 1) {
-						showMessage('error', 'Multiple faces detected. Please ensure only your face is visible.');
-					} else {
-						const descriptor = dets[0].descriptor;
-						if (!isCaptureQualityHigh(dets[0])) {
-							showMessage('error', 'Low-quality capture. Ensure good lighting and face the camera.');
-						} else if (isDuplicateAcrossUsers(descriptor)) {
-							showMessage('error', 'This face appears already registered. Restart if this is incorrect.');
-						} else if (!isConsistentWithCurrentUser(descriptor)) {
-							showMessage('error', 'Face recognized, but the angle changed too much. Please turn your head slowly left or right.');
-						} else {
-							showMessage('success', 'Face capture accepted.');
-							if(navigator.vibrate){ navigator.vibrate(100); }
-							faceapi_register(descriptor);
-						}
-					}
-				} else {
-					console.log("faceapi_action is NULL");
-				}
-			} else {
-				showMessage("error", "No face detected. Make sure your face is fully visible and well lit.");
-			}
-			
-			if (typeof vle_face_landmark_position_yn === "string" && vle_face_landmark_position_yn == "y") {
-				if (Array.isArray(dets) && dets.length > 0 && dets[0]) {
-					draw_face_landmarks(dets[0]);
-				} else {
-					clear_landmarks();
-				}
-			}
-			
-			if (multiple_face_detection_yn !== "y" && typeof vle_facebox_yn === "string" && vle_facebox_yn == "y") {
-				var temp_canvas_id = canvasId3;
-				var temp_canvas = document.getElementById(temp_canvas_id);
-				if (dets && dets.length > 0) {
-					// facebox
-					console.log("draw_face_box");
-					if (dets[0] && dets[0] !== undefined) {
-						var box = dets[0].alignedRect._box;
-						var confidence = dets[0].detection._score;
-						
-						// Check if box is defined and not null
-						if (box && box._x !== undefined && box._y !== undefined && box._width !== undefined && box._height !== undefined) {
-							// Safe to call the function as box is valid
-							draw_face_box(temp_canvas_id, box, confidence);
-						} else {
-							console.log("Box is not defined or invalid");
-						}
-					}
-				}else{
-					temp_canvas.style.display = "none";
-				}
-			}
-			
-			// During registration, overlay recognition info
-			if (faceapi_action === "register") {
-				if (Array.isArray(dets) && dets.length > 0 && dets[0]) {
-					drawRegistrationOverlay(dets[0]);
-				}
-			}
-			
-			// After all drawing operations are complete, mark detection as done and queue the next frame.
-			isDetectingFrame = false;
-			if (typeof videoDetectionStep === 'function') {
-				requestAnimationFrame(videoDetectionStep);
-			}
-			
-			break;
-			case 'WARMUP_RESULT':
-			console.log('WARMUP_RESULT.');
-			//console.log(event);
-			//console.log(event.data.data.detections);
-			
-			if (typeof warmup_completed !== 'undefined') {
-				// Execute all functions in the array
-				if (warmup_completed.length > 0) {
-					warmup_completed.forEach(func => func());
-				}
-			}else{
-				setTimeout(faceapi_warmup, 30000);
-			}
-			
-			break;
-			default:
-			console.log('Unknown message type:', event.data.type);
-		}
-	});
+    modelWorker.onmessage = async (event) => {
+        console.log('event.data.type.');
+        console.log(event.data.type);
+        switch (event.data.type) {
+            case 'MODELS_LOADED':
+                console.log('Face detection models loaded.');
+                isFaceApiReady = true;
+                if (typeof resolveFaceApiReady === 'function') {
+                    resolveFaceApiReady();
+                }
+                hideLoadingOverlay();
+                if (typeof warmup_completed !== 'undefined' && warmup_completed.length > 0) {
+                    warmup_completed.forEach(func => func());
+                }
+                break;
+            case 'DETECTION_RESULT':
+                console.log("DETECTION_RESULT here");
+                const dets = event.data.data.detections[0];
+                const imageDataForFrame = event.data.data.detections[1] && event.data.data.detections[1][0];
+                lastFaceImageData = imageDataForFrame;
+                drawImageDataToCanvas(event.data.data.detections, canvasOutputId);
+                drawAllFaces(Array.isArray(dets) ? dets : []);
+                if (Array.isArray(dets) && dets.length > 0) {
+                    if (faceapi_action === "verify") {
+                        dets.forEach(d => faceapi_verify(d.descriptor, imageDataForFrame));
+                    } else if (faceapi_action === "register") {
+                        if (registrationStartTime === null) {
+                            registrationStartTime = Date.now();
+                            startRegistrationTimer();
+                        }
+                        if (Date.now() - registrationStartTime > registrationTimeout) {
+                            stopRegistrationTimer();
+                            showMessage('error', 'Registration timed out. Ensure you are well lit and try again.');
+                            if (typeof showTimeoutOverlay === 'function') showTimeoutOverlay();
+                            faceapi_action = null;
+                            camera_stop();
+                            registrationCompleted = true;
+                            stopRegistrationTimer();
+                        } else if (dets.length !== 1) {
+                            showMessage('error', 'Multiple faces detected. Please ensure only your face is visible.');
+                        } else {
+                            const descriptor = dets[0].descriptor;
+                            if (!isCaptureQualityHigh(dets[0])) {
+                                showMessage('error', 'Low-quality capture. Ensure good lighting and face the camera.');
+                            } else if (isDuplicateAcrossUsers(descriptor)) {
+                                showMessage('error', 'This face appears already registered. Restart if this is incorrect.');
+                            } else if (!isConsistentWithCurrentUser(descriptor)) {
+                                showMessage('error', 'Face recognized, but the angle changed too much. Please turn your head slowly left or right.');
+                            } else {
+                                showMessage('success', 'Face capture accepted.');
+                                if (navigator.vibrate) {
+                                    navigator.vibrate(100);
+                                }
+                                faceapi_register(descriptor);
+                            }
+                        }
+                    } else {
+                        console.log("faceapi_action is NULL");
+                    }
+                } else {
+                    showMessage("error", "No face detected. Make sure your face is fully visible and well lit.");
+                }
+                if (typeof vle_face_landmark_position_yn === "string" && vle_face_landmark_position_yn == "y") {
+                    if (Array.isArray(dets) && dets.length > 0 && dets[0]) {
+                        draw_face_landmarks(dets[0]);
+                    } else {
+                        clear_landmarks();
+                    }
+                }
+                if (multiple_face_detection_yn !== "y" && typeof vle_facebox_yn === "string" && vle_facebox_yn == "y") {
+                    var temp_canvas_id = canvasId3;
+                    var temp_canvas = document.getElementById(temp_canvas_id);
+                    if (dets && dets.length > 0) {
+                        if (dets[0] && dets[0] !== undefined) {
+                            var box = dets[0].alignedRect._box;
+                            var confidence = dets[0].detection._score;
+                            if (box && box._x !== undefined && box._y !== undefined && box._width !== undefined && box._height !== undefined) {
+                                draw_face_box(temp_canvas_id, box, confidence);
+                            } else {
+                                console.log("Box is not defined or invalid");
+                            }
+                        }
+                    } else {
+                        temp_canvas.style.display = "none";
+                    }
+                }
+                if (faceapi_action === "register") {
+                    if (Array.isArray(dets) && dets.length > 0 && dets[0]) {
+                        drawRegistrationOverlay(dets[0]);
+                    }
+                }
+                isDetectingFrame = false;
+                if (typeof videoDetectionStep === 'function') {
+                    requestAnimationFrame(videoDetectionStep);
+                }
+                break;
+            default:
+                console.log('Unknown message type:', event.data.type);
+        }
+    };
 }
 
 async function workerRegistration() {
-	if (!('serviceWorker' in navigator)) {
-		console.error('Service workers are not supported in this browser.');
-		return;
-	}
-	
-	// Ensure the scope of the SW covers the current page (script directory by default)
-	const swScope = './js/';
-	
-	// Attempt to find an existing registration for our SW file within scope
-	const registrations = await navigator.serviceWorker.getRegistrations();
-	let registration = registrations.find(reg => reg.active && reg.active.scriptURL.endsWith(serviceWorkerFileName));
-	
-	if (!registration) {
-		console.log('Registering new service worker');
-		try {
-			registration = await navigator.serviceWorker.register(serviceWorkerFilePath, { scope: swScope });
-		} catch (err) {
-			console.error('Service worker registration failed:', err);
-			throw err;
-		}
-	}
-	
-	// Wait until the service worker is activated. Avoid using navigator.serviceWorker.ready
-	if (!registration.active) {
-		console.log('Waiting for service worker to activate...');
-		
-		await new Promise(resolve => {
-			// If there is an installing worker listen for state changes
-			const installingWorker = registration.installing || registration.waiting;
-			if (!installingWorker) {
-				// No worker yet (very unlikely) – resolve immediately
-				return resolve();
-			}
-			
-			if (installingWorker.state === 'activated') {
-				return resolve();
-			}
-			
-			installingWorker.addEventListener('statechange', evt => {
-				if (evt.target.state === 'activated') {
-					resolve();
-				}
-			});
-		});
-	}
-	
-	// After activation grab the worker reference
-	worker = registration.active || registration.waiting || registration.installing;
-	return worker;
+    if (window.Worker) {
+        modelWorker = new Worker('./js/modelLoaderWorker.js');
+        worker = modelWorker;
+        return worker;
+    } else {
+        console.error('Web Workers are not supported in this browser.');
+        return null;
+    }
 }
 
 function delay(ms) {
@@ -1405,51 +1340,35 @@ function delay(ms) {
 }
 
 async function load_model() {
-	if (!worker) {
-		// Ensure we have a reference – this should usually not happen because
-		// initWorker already awaited workerRegistration(), but keep it as a
-		// safeguard.
-		await workerRegistration();
-	}
-	
-	if (worker) {
-		worker.postMessage({ type: 'LOAD_MODELS' });
-	} else {
-		console.error('Unable to post message, worker is undefined');
-	}
+    if (!worker) {
+        await workerRegistration();
+    }
+    if (worker) {
+        worker.postMessage({ type: 'LOAD_MODELS' });
+    } else {
+        console.error('Unable to post message, worker is undefined');
+    }
 }
 
 async function initWorker() {
-	if ('serviceWorker' in navigator) {
-		try {
-			// Optionally uncomment if needed
-			// await unregisterAllServiceWorker();
-			
-			console.log("Registering service worker...");
-			await workerRegistration(); // Wait for worker registration
-			
-			console.log("Adding event listeners...");
-			await initWorkerAddEventListener(); // Wait for event listeners to be added
-			
-			console.log("Waiting for 1 second...");
-			await delay(500); // Wait for 1 second to give the service worker some time to activate. If not, when the service worker is created for the first time, posting a message will cause an error and stop everything.
-			
-			console.log("Loading model...");
-			await load_model(); // Wait for the model to load
-			
-			isWorkerReady = true; // Set the worker as ready
-			isFaceApiReady = true;
-			if (typeof resolveFaceApiReady === 'function') {
-				resolveFaceApiReady();
-			}
-			hideLoadingOverlay();
-			console.log("Worker initialized successfully.");
-		} catch (error) {
-			console.error("Error initializing worker:", error);
-		}
-	} else {
-		console.error('Service workers are not supported in this browser.');
-	}
+    if (window.Worker) {
+        try {
+            console.log("Registering web worker...");
+            await workerRegistration();
+            console.log("Adding event listeners...");
+            await initWorkerAddEventListener();
+            console.log("Loading model...");
+            await load_model();
+            isWorkerReady = true;
+            console.log("Worker initialized successfully.");
+        } catch (error) {
+            console.error("Error initializing worker:", error);
+            await startInMainThread();
+        }
+    } else {
+        console.error('Web workers are not supported. Falling back to main thread.');
+        await startInMainThread();
+    }
 }
 
 
