@@ -1230,132 +1230,94 @@ async function faceapi_verify(descriptor, imageData){
 	}
 }
 
+function handleWorkerMessage(event) {
+    console.log('Received message from worker:', event.data.type);
+    switch (event.data.type) {
+        case 'MODELS_LOADED':
+            console.log('Face detection models loaded by worker.');
+            isFaceApiReady = true;
+            if (typeof resolveFaceApiReady === 'function') {
+                resolveFaceApiReady();
+            }
+            hideLoadingOverlay();
+            faceapi_warmup();
+            break;
+        case 'DETECTION_RESULT':
+            const dets = event.data.data.detections[0];
+            const imageDataForFrame = event.data.data.detections[1] && event.data.data.detections[1][0];
+            lastFaceImageData = imageDataForFrame;
+            drawImageDataToCanvas(event.data.data.detections, canvasOutputId);
+            drawAllFaces(Array.isArray(dets) ? dets : []);
+
+            if (Array.isArray(dets) && dets.length > 0) {
+                if (faceapi_action === "verify") {
+                    dets.forEach(d => faceapi_verify(d.descriptor, imageDataForFrame));
+                } else if (faceapi_action === "register") {
+                    if (registrationStartTime === null) {
+                        registrationStartTime = Date.now();
+                        startRegistrationTimer();
+                    }
+                    if (Date.now() - registrationStartTime > registrationTimeout) {
+                        stopRegistrationTimer(true);
+                    } else if (dets.length !== 1) {
+                        showMessage('error', 'Multiple faces detected. Please ensure only your face is visible.');
+                    } else {
+                        const descriptor = dets[0].descriptor;
+                        if (!isCaptureQualityHigh(dets[0])) {
+                            showMessage('error', 'Low-quality capture. Ensure good lighting and face the camera.');
+                        } else if (isDuplicateAcrossUsers(descriptor)) {
+                            showMessage('error', 'This face appears already registered.');
+                        } else if (!isConsistentWithCurrentUser(descriptor)) {
+                            showMessage('error', 'Face angle changed too much. Please turn your head slowly.');
+                        } else {
+                            showMessage('success', 'Face capture accepted.');
+                            if (navigator.vibrate) navigator.vibrate(100);
+                            faceapi_register(descriptor);
+                        }
+                    }
+                }
+            } else {
+                showMessage("error", "No face detected. Make sure your face is fully visible and well lit.");
+            }
+
+            if (typeof vle_face_landmark_position_yn === "string" && vle_face_landmark_position_yn == "y") {
+                if (Array.isArray(dets) && dets.length > 0 && dets[0]) {
+                    draw_face_landmarks(dets[0]);
+                } else {
+                    clear_landmarks();
+                }
+            }
+
+            if (multiple_face_detection_yn !== "y" && typeof vle_facebox_yn === "string" && vle_facebox_yn == "y") {
+                if (dets && dets.length > 0 && dets[0] && dets[0].alignedRect && dets[0].alignedRect._box) {
+                    draw_face_box(canvasId3, dets[0].alignedRect._box, dets[0].detection._score);
+                } else {
+                    clear_boxes();
+                }
+            }
+
+            if (faceapi_action === "register" && Array.isArray(dets) && dets.length > 0 && dets[0]) {
+                drawRegistrationOverlay(dets[0]);
+            }
+
+            isDetectingFrame = false;
+            if (typeof videoDetectionStep === 'function') {
+                requestAnimationFrame(videoDetectionStep);
+            }
+            break;
+        case 'WARMUP_RESULT':
+            console.log('Warmup completed by worker.');
+            if (typeof warmup_completed !== 'undefined' && Array.isArray(warmup_completed)) {
+                warmup_completed.forEach(func => func());
+            }
+            break;
+        default:
+            console.log('Unknown message type from worker:', event.data.type);
+    }
+}
+
 async function initWorkerAddEventListener() {
-	navigator.serviceWorker.addEventListener('message', (event) => {
-		console.log('event.data.type.');
-		console.log(event.data.type);
-		switch (event.data.type) {
-			case 'MODELS_LOADED':
-			console.log('Face detection models loaded.');
-			faceapi_warmup();
-			break;
-			case 'DETECTION_RESULT':
-			console.log("DETECTION_RESULT here");
-			//console.log(event);
-			//console.log(event.data.data.detections[0]);
-			//console.log("event.data.data.detections");
-			console.log(event.data.data.detections);
-			
-			
-			const dets = event.data.data.detections[0];
-			const imageDataForFrame = event.data.data.detections[1] && event.data.data.detections[1][0];
-			lastFaceImageData = imageDataForFrame; // Keep for registration preview
-			drawImageDataToCanvas(event.data.data.detections, canvasOutputId);
-			drawAllFaces(Array.isArray(dets) ? dets : []);
-			if (Array.isArray(dets) && dets.length > 0) {
-				if (faceapi_action === "verify") {
-					dets.forEach(d => faceapi_verify(d.descriptor, imageDataForFrame));
-				} else if (faceapi_action === "register") {
-					// Handle registration timeout
-					if (registrationStartTime === null) {
-						registrationStartTime = Date.now();
-						startRegistrationTimer();
-					}
-					if (Date.now() - registrationStartTime > registrationTimeout) {
-						stopRegistrationTimer();
-						showMessage('error', 'Registration timed out. Ensure you are well lit and try again.');
-						if (typeof showTimeoutOverlay === 'function') showTimeoutOverlay();
-						faceapi_action = null;
-						camera_stop();
-						registrationCompleted = true;
-						stopRegistrationTimer();
-					} else if (dets.length !== 1) {
-						showMessage('error', 'Multiple faces detected. Please ensure only your face is visible.');
-					} else {
-						const descriptor = dets[0].descriptor;
-						if (!isCaptureQualityHigh(dets[0])) {
-							showMessage('error', 'Low-quality capture. Ensure good lighting and face the camera.');
-						} else if (isDuplicateAcrossUsers(descriptor)) {
-							showMessage('error', 'This face appears already registered. Restart if this is incorrect.');
-						} else if (!isConsistentWithCurrentUser(descriptor)) {
-							showMessage('error', 'Face recognized, but the angle changed too much. Please turn your head slowly left or right.');
-						} else {
-							showMessage('success', 'Face capture accepted.');
-							if(navigator.vibrate){ navigator.vibrate(100); }
-							faceapi_register(descriptor);
-						}
-					}
-				} else {
-					console.log("faceapi_action is NULL");
-				}
-			} else {
-				showMessage("error", "No face detected. Make sure your face is fully visible and well lit.");
-			}
-			
-			if (typeof vle_face_landmark_position_yn === "string" && vle_face_landmark_position_yn == "y") {
-				if (Array.isArray(dets) && dets.length > 0 && dets[0]) {
-					draw_face_landmarks(dets[0]);
-				} else {
-					clear_landmarks();
-				}
-			}
-			
-			if (multiple_face_detection_yn !== "y" && typeof vle_facebox_yn === "string" && vle_facebox_yn == "y") {
-				var temp_canvas_id = canvasId3;
-				var temp_canvas = document.getElementById(temp_canvas_id);
-				if (dets && dets.length > 0) {
-					// facebox
-					console.log("draw_face_box");
-					if (dets[0] && dets[0] !== undefined) {
-						var box = dets[0].alignedRect._box;
-						var confidence = dets[0].detection._score;
-						
-						// Check if box is defined and not null
-						if (box && box._x !== undefined && box._y !== undefined && box._width !== undefined && box._height !== undefined) {
-							// Safe to call the function as box is valid
-							draw_face_box(temp_canvas_id, box, confidence);
-						} else {
-							console.log("Box is not defined or invalid");
-						}
-					}
-				}else{
-					temp_canvas.style.display = "none";
-				}
-			}
-			
-			// During registration, overlay recognition info
-			if (faceapi_action === "register") {
-				if (Array.isArray(dets) && dets.length > 0 && dets[0]) {
-					drawRegistrationOverlay(dets[0]);
-				}
-			}
-			
-			// After all drawing operations are complete, mark detection as done and queue the next frame.
-			isDetectingFrame = false;
-			if (typeof videoDetectionStep === 'function') {
-				requestAnimationFrame(videoDetectionStep);
-			}
-			
-			break;
-			case 'WARMUP_RESULT':
-			console.log('WARMUP_RESULT.');
-			//console.log(event);
-			//console.log(event.data.data.detections);
-			
-			if (typeof warmup_completed !== 'undefined') {
-				// Execute all functions in the array
-				if (warmup_completed.length > 0) {
-					warmup_completed.forEach(func => func());
-				}
-			}else{
-				setTimeout(faceapi_warmup, 30000);
-			}
-			
-			break;
-			default:
-			console.log('Unknown message type:', event.data.type);
-		}
-	});
+    navigator.serviceWorker.addEventListener('message', handleWorkerMessage);
 }
 
 async function workerRegistration() {
@@ -1505,233 +1467,55 @@ function faceapi_warmup() {
 	}
 }
 
-// Main-thread detection loop (for fallback mode)
-async function video_face_detection_mainthread() {
-	const video = document.getElementById(videoId);
-	const canvas = document.getElementById(canvasId);
-	const ctx = canvas.getContext("2d");
-	canvas.willReadFrequently = true;
-	
-	async function step() {
-		if (!video.srcObject || video.paused || video.ended) {
-			requestAnimationFrame(step);
-			return;
-		}
-		
-		// Draw frame to canvas
-		canvas.width = video.videoWidth;
-		canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        lastFaceImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-		
-		// Detect faces directly
-		let detections;
-		if (multiple_face_detection_yn === "y") {
-			detections = await faceapi
-			.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions(face_detector_options_setup))
-			.withFaceLandmarks()
-			.withFaceDescriptors();
-		} else {
-			const result = await faceapi
-			.detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions(face_detector_options_setup))
-			.withFaceLandmarks()
-			.withFaceDescriptor();
-			detections = result ? [result] : [];
-		}
-		
-        drawImageDataToCanvas([detections, [lastFaceImageData]], canvasOutputId);
-        drawAllFaces(detections);
-		
-		// ----- Registration/verification logic -----
-		if (faceapi_action === "verify") {
-			const currentFrameImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-			detections.forEach(d => faceapi_verify(d.descriptor, currentFrameImageData));
-		} else if (faceapi_action === "register") {
-			// --- Registration timer logic (matches worker logic) ---
-			if (registrationStartTime === null) {
-				registrationStartTime = Date.now();
-				startRegistrationTimer();
-			}
-			if (Date.now() - registrationStartTime > registrationTimeout) {
-				stopRegistrationTimer();
-				showMessage('error', 'Registration timed out. Ensure you are well lit and try again.');
-				if (typeof showTimeoutOverlay === 'function') showTimeoutOverlay();
-				faceapi_action = null;
-				camera_stop();
-				registrationCompleted = true;
-				stopRegistrationTimer();
-			} else if (detections.length !== 1) {
-				showMessage('error', 'Multiple faces detected. Please ensure only your face is visible.');
-			} else {
-				// --- Set lastFaceImageData for thumbnail preview, just like worker mode ---
-				lastFaceImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-				const descriptor = detections[0].descriptor;
-				if (!isCaptureQualityHigh(detections[0])) {
-					showMessage('error', 'Low-quality capture. Ensure good lighting and face the camera.');
-				} else if (isDuplicateAcrossUsers(descriptor)) {
-					showMessage('error', 'This face appears already registered. Restart if this is incorrect.');
-				} else if (!isConsistentWithCurrentUser(descriptor)) {
-					showMessage('error', 'Face recognized, but the angle changed too much. Please turn your head slowly left or right.');
-				} else {
-					showMessage('success', 'Face capture accepted.');
-					if (navigator.vibrate) navigator.vibrate(100);
-					faceapi_register(descriptor);
-				}
-			}
-		}
-		
-		// --- Draw registration overlay for current detected face (like worker) ---
-		if (faceapi_action === "register" && detections.length === 1 && detections[0]) {
-			drawRegistrationOverlay(detections[0]);
-		}
-		
-		requestAnimationFrame(step);
-	}
-	
-	// Kick off the loop
-	requestAnimationFrame(step);
-}
-
-// Main-thread fallback for environments without SW/OffscreenCanvas (e.g. iOS PWA)
-async function faceapi_warmup_mainthread() {
-    var img_face_for_loading = imgFaceFilePathForWarmup;
-    if (img_face_for_loading) {
-        var img = new Image();
-        img.src = img_face_for_loading;
-        await new Promise(resolve => {
-            img.onload = async () => {
-                console.log("Main-thread warmup: performing initial detection");
-                console.log("Warmup image loaded. img.width:", img.width, "img.height:", img.height);
-                let canvas_hidden = document.createElement('canvas');
-                canvas_hidden.willReadFrequently = true;
-                let context = canvas_hidden.getContext("2d");
-                canvas_hidden.width = img.width;
-                canvas_hidden.height = img.height;
-                context.drawImage(img, 0, 0, img.width, img.height);
-
-                try {
-                    console.log("Calling faceapi.detectAllFaces on warmup canvas...");
-                    const detections = await faceapi.detectAllFaces(canvas_hidden, new faceapi.TinyFaceDetectorOptions(face_detector_options_setup));
-                    console.log("Main-thread warmup complete. Detection result:", detections);
-                } catch (err) {
-                    console.error("Error during main-thread warmup detection:", err);
-                }
-                resolve();
-            };
-            img.onerror = (e) => {
-                console.error("Main-thread warmup image failed to load:", img_face_for_loading, e);
-                resolve();
-            };
-        });
-    }
-}
-
-async function startInMainThread() {
-    console.log("Main-thread fallback: using Web Worker to load models.");
+// Initialize the Web Worker fallback
+async function startWebWorker() {
+    console.log("Service Worker not supported, falling back to Web Worker.");
     showLoadingOverlay();
 
-    // Check for Web Worker support as a final fallback
     if (window.Worker) {
         worker = new Worker('./js/faceDetectionWebWorker.js');
 
-        worker.onmessage = async (event) => {
-            if (event.data.type === 'MODELS_LOADED') {
-                console.log("Main thread: Models loaded by worker.");
-                isFaceApiReady = true;
-				if (typeof resolveFaceApiReady === 'function') {
-					resolveFaceApiReady();
-				}
-                
-                // Models are loaded, now perform the main-thread warmup
-                await faceapi_warmup_mainthread();
-                console.log("After main-thread warmup: starting camera and detection loop");
-                hideLoadingOverlay();
-
-                // Start camera and detection loop
-                await camera_start();
-                await video_face_detection_mainthread();
-
-                modelWorker.terminate(); // Clean up the worker
-            } else if (event.data.type === 'LOAD_ERROR') {
-                console.error("Model loading in worker failed:", event.data.error);
-                hideLoadingOverlay();
-                showMessage('error', 'Failed to load face models. Please refresh.');
-            }
+        // Listen for messages from the Web Worker
+        worker.onmessage = (event) => {
+            // Use the same event listener logic as the Service Worker
+            handleWorkerMessage(event);
         };
 
+        worker.onerror = (error) => {
+            console.error("Web Worker error:", error);
+            hideLoadingOverlay();
+            showMessage('error', 'An error occurred with the Web Worker.');
+        };
+
+        // Start loading models in the Web Worker
         worker.postMessage({ type: 'LOAD_MODELS' });
     } else {
-        // Absolute fallback if even Web Workers are not supported
-        console.error("Web Workers not supported. Loading models on main thread.");
-        await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
-        await faceapi.nets.faceLandmark68Net.loadFromUri('./models');
-        await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
-        
-        await faceapi_warmup_mainthread();
-        console.log("After main-thread warmup: starting camera and detection loop");
-        isFaceApiReady = true;
-		if (typeof resolveFaceApiReady === 'function') {
-			resolveFaceApiReady();
-		}
+        console.error("Web Workers are not supported in this browser.");
         hideLoadingOverlay();
-        
-        await camera_start();
-        await video_face_detection_mainthread();
+        showMessage('error', 'Face detection is not supported on this browser.');
     }
 }
 
-// Initialize either service worker or fallback on main thread
+// Initialize either service worker or fallback to web worker
 document.addEventListener("DOMContentLoaded", async function(event) {
 	clearProgress();
 	loadProgress();
 	adjustDetectionForDevice();
 	console.log("DOMContentLoaded - checking Service Worker support");
-	
-	
-	// UserAgent detection
-	const ua = navigator.userAgent;
-	const isIOS = /iP(hone|ad|od)/.test(ua);          // Detect if the device is iOS (iPhone, iPad, iPod)
-	const isChromeIOS = isIOS && /CriOS/.test(ua);    // Detect if the browser is Chrome on iOS
-	
-	// OffscreenCanvas feature detection
-	function offscreenCanvasSupported() {
-		try {
-			const canvas = new OffscreenCanvas(1, 1);      // Try to create an OffscreenCanvas
-			const ctx = canvas.getContext('2d');           // Try to get 2D context
-			console.log("offscreenCanvasSupported");
-			console.log(!!ctx);
-			return !!ctx;                                  // Return true if successful, false if not
-		} catch {
-			console.log("offscreenCanvasSupported");
-			console.log(false);
-			return false;                                  // Return false if any error occurs
-		}
-	}
-	
-	const swSupported = 'serviceWorker' in navigator;  // Check if Service Worker is supported
-	const offscreenSupported = offscreenCanvasSupported(); // Check if OffscreenCanvas is supported properly
-	
-	// Final decision whether to use the Worker:
-	// Use Worker only if Service Worker and OffscreenCanvas are supported,
-	// and the browser is NOT Chrome on iOS (due to compatibility issues)
-	const canUseWorker = swSupported && offscreenSupported && !isChromeIOS;
-	// Force Web Worker/main-thread fallback for debugging
-	// (Set to false to always use startInMainThread)
-	// Remove or comment this line to restore normal behavior
-	const forceWebWorkerDebug = true;
-	const effectiveCanUseWorker = forceWebWorkerDebug ? false : canUseWorker;
-	
-	
-	if (effectiveCanUseWorker) {
+
+	const swSupported = 'serviceWorker' in navigator;
+	const offscreenSupported = typeof OffscreenCanvas !== 'undefined';
+
+	if (swSupported && offscreenSupported) {
 		try {
 			await initWorker();
 		} catch (e) {
-			console.warn("initWorker failed, falling back to main thread", e);
-			await startInMainThread();
+			console.warn("Service Worker initialization failed, falling back to Web Worker", e);
+			await startWebWorker();
 		}
 	} else {
-		console.warn("Service Worker or OffscreenCanvas not available or forced Web Worker debug mode; using main thread/Web Worker fallback");
-		await startInMainThread();
+		console.warn("Service Worker not supported, using Web Worker fallback.");
+		await startWebWorker();
 	}
 	updateProgress();
 	updateVerifyProgress();
