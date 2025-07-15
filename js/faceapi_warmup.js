@@ -1598,10 +1598,8 @@ async function startInMainThread() {
     isFaceApiReady = true;
     hideLoadingOverlay();
 
-	if (Array.isArray(warmup_completed)) {
-		warmup_completed.forEach(func => func());
-	}
-	
+	// Directly call the necessary functions for the main-thread flow.
+	await camera_start();
 	await video_face_detection_mainthread();
 }
 
